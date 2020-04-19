@@ -3,7 +3,7 @@
 ## Introduction
 Trajectory optimization code following Matthew Kelly's tutorial here: http://www.matthewpeterkelly.com/research/MatthewKelly_IntroTrajectoryOptimization_SIAM_Review_2017.pdf
 
-This repo contains some simple transcriptions of trajectory optimization problems to evaluate how well it works. Note, the implementations are not fast and are merely for testing.
+This directory contains some simple transcriptions of trajectory optimization problems to evaluate how well it works. Note, the implementations are not fast and are merely for testing.
 
 ## Organization/Usage
 The first file to look at is `block_move_trapezoidal.py` which contains functions for a simple double integrator problem that have been transcribed by hand. The functions are not generalizable, and is just there to give a simple example of a transcription of an easy problem. It is easy to debug and see the program flow.
@@ -27,9 +27,9 @@ To run analysis:
 
 `python3 test_errors.py`
 
-![Alt text](images/block.png?raw=true "double integrator data")
-![Alt text](images/pendulum.png?raw=true "pendulum data")
-![Alt text](images/analysis.png?raw=true "analysis data")
+![Double Integrator](images/block.png?raw=true "Double Integrator Data")
+![Pendulum](images/pendulum.png?raw=true "Pendulum Data")
+![Analysis](images/analysis.png?raw=true "Analysis Data")
 
 
 ## Dependencies
