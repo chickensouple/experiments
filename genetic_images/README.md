@@ -1,4 +1,4 @@
-# Genetic Algorithm for Image Apprxoimation
+# Genetic Algorithm for Image Approximation
 
 ## Introduction
 The main idea is taken from https://rogerjohansson.blog/2008/12/07/genetic-programming-evolution-of-mona-lisa/, where the goal is to approximate an image using colored semi-transparent polygons. In the original code, the approximation is obtained through a genetic algorithm where a batch of polygons is generated. Then the batch of polygons is mutated and compared with the original batch. If it is a better approximation, the mutation replaces the original.
