@@ -26,10 +26,11 @@ This will run an MPC loop, resolving the problem 7 times. This is the command th
 
 
 ## Dependencies
-Code has been tested with the following packages:
+The code has been tested with the following packages:
 
 * Python3.6
-* tensorflow 2.1
-* numpy 1.18.2
-* scipy 1.4.1
-* matplotlib 3.2.1
+  * tensorflow 2.1
+  * numpy 1.18.2
+  * scipy 1.4.1
+  * matplotlib 3.2.1
+

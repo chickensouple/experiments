@@ -28,8 +28,8 @@ To train on a custom blob of text, use `--dataset custom` and copy your text blo
 Code has been tested with the following packages:
 
 * Python3.6
-* tensorflow 2.1
-* tensorflow-datasets 2.1
-* numpy 1.18.2
-* tqdm 4.31.1 
- 
+  * tensorflow 2.1
+  * tensorflow-datasets 2.1
+  * numpy 1.18.2
+  * tqdm 4.31.1 
+   

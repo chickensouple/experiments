@@ -33,11 +33,11 @@ To run analysis:
 
 
 ## Dependencies
-Code has been tested with the following packages:
+The code has been tested with the following packages:
 
 * Python3.6
-* numpy 1.18.2
-* scipy 1.4.1 
-* matplotlib 3.2.1
+  * numpy 1.18.2
+  * scipy 1.4.1 
+  * matplotlib 3.2.1
 
 

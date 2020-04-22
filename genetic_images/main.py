@@ -15,21 +15,30 @@ class TriangleImage(object):
     to be rendered onto an image.
     Each triangle is represented by its 3 vertices and an rgba color.
     """
-    def __init__(self, im_height, im_width, num_triangles):
+    def __init__(self, im_height, im_width, max_triangles):
         self.im_height = im_height
         self.im_width = im_width
-        self.num_triangles = num_triangles
+        self.max_triangles = max_triangles
+        self.num_triangles = 0
 
         self.image = np.zeros((im_height, im_width, 3), dtype=np.uint8)
         
         # (x1, y1, x2, y2, x3, y3)
-        self.vertices = np.zeros((self.num_triangles, 3, 2), dtype=np.int32)
+        self.vertices = np.zeros((self.max_triangles, 3, 2), dtype=np.int32)
         
         # rgba. all numbers in range [0, 255]
         # this uses int16 so that arithmetic won't over/underflow
-        self.colors = np.zeros((self.num_triangles, 4), dtype=np.int16)
+        self.colors = np.zeros((self.max_triangles, 4), dtype=np.int16)
 
-        self.mutate_frac = 0.05
+        self.mutate_new_prob = 0.02
+        self.mutate_pos_prob = 0.5
+
+    def init(self):
+        self._generate_random_triangle(0)
+        self.num_triangles = 1
+
+    def get_num_triangles(self):
+        return self.num_triangles
 
     def render(self):
         """
@@ -49,71 +58,108 @@ class TriangleImage(object):
             self.image = cv2.addWeighted(self.image, 1 - shape_alpha, shape_im, shape_alpha, gamma=0)
         return self.image
 
-    def mutate(self, num_mutate, regen_inactive=False):
+    def mutate(self, color_data=None):
         """
-        Mutates "num_mutate" triangles.
+        Mutates the triangle image.
         The mutated triangles will be randomly chosen.
         The mutated triangles will either have a single vertex changed,
         its color changed.  
-        
-        Arguments:
-            num_mutate {int} -- Number of triangles to mutate.
         """
 
-        num_inactive = 0
-        if regen_inactive and np.random.random() < 0.5:
-            # with 0.5 probability, try to regenerate as many inactive triangles as possible
-            inactive_idx = self._get_inactive_triangle_idx()
-            num_inactive = np.minimum(len(inactive_idx), num_mutate)
-            rand_inactive_idx = np.random.choice(inactive_idx, (num_inactive,))
+        if (self.num_triangles != self.max_triangles) and \
+           (np.random.random() < self.mutate_new_prob):
+            self._generate_random_triangle(self.num_triangles, color_data=color_data)
+            self.num_triangles += 1
+            return
 
-            self.vertices[rand_inactive_idx, :, 0] = np.random.randint(0, self.im_width, (num_inactive, 3))
-            self.vertices[rand_inactive_idx, :, 1] = np.random.randint(0, self.im_height, (num_inactive, 3))
-            self.colors[rand_inactive_idx, :] = np.random.randint(0, 256, (num_inactive, 4), dtype=np.int16)
+        # index of random triangle to mutate
+        rand_idx = np.random.randint(0, self.num_triangles)
 
-            if np.min(inactive_idx) < self.num_triangles - len(inactive_idx) - (self.num_triangles / 10):
-                self._reorder_inactive()
-
-        # choose "num_mutate" random triangles
-        num_mutate = num_mutate - num_inactive
-        if num_mutate == 0:
-            return 
-        rand_idx = np.random.randint(0, self.num_triangles, (num_mutate))
-        
-
-        # Mutation parameters:
-        # Each vertex location or color
-        # will be moved by drawing a difference
-        # from a gaussian distribution.
         rand_x_sigma = self.im_width * 0.05
         rand_y_sigma = self.im_height * 0.05
         rand_color_sigma = 20
         rand_alpha_sigma = 10
-        if np.random.random() < 0.5:
-            rand_vertex = np.random.randint(0, 3, (num_mutate,))
-            x_rand = np.zeros((num_mutate, 3), dtype=np.int32)
-            x_rand[np.arange(rand_vertex.size), rand_vertex] = \
-                np.array(np.rint(np.random.randn(num_mutate,) * rand_x_sigma), dtype=np.int32)
-            self.vertices[rand_idx, :, 0] += x_rand
-            self.vertices[rand_idx, :, 0] = np.maximum(self.vertices[rand_idx, :, 0], 0)
-            self.vertices[rand_idx, :, 0] = np.minimum(self.vertices[rand_idx, :, 0], self.im_width)
+        if np.random.random() < self.mutate_pos_prob:
+            num_vertices = np.random.randint(1, 4)
+            rand_vertex = np.random.randint(0, 3, (num_vertices,))
 
-            y_rand = np.zeros((num_mutate, 3), dtype=np.int32)
-            y_rand[np.arange(rand_vertex.size), rand_vertex] = \
-                np.array(np.rint(np.random.randn(num_mutate,) * rand_y_sigma), dtype=np.int32)
-            self.vertices[rand_idx, :, 1] += y_rand
-            self.vertices[rand_idx, :, 1] = np.maximum(self.vertices[rand_idx, :, 1], 0)
-            self.vertices[rand_idx, :, 1] = np.minimum(self.vertices[rand_idx, :, 1], self.im_height)
+            new_x = self.vertices[rand_idx, rand_vertex, 0] + np.array(np.rint(np.random.randn(num_vertices) * rand_x_sigma), dtype=np.int32)
+            new_x = np.maximum(new_x, 0)
+            new_x = np.minimum(new_x, self.im_width)
+            self.vertices[rand_idx, rand_vertex, 0] = new_x
+
+            new_y = self.vertices[rand_idx, rand_vertex, 0] + np.array(np.rint(np.random.randn(num_vertices) * rand_y_sigma), dtype=np.int32)
+            new_y = np.maximum(new_y, 0)
+            new_y = np.minimum(new_y, self.im_width)
+            self.vertices[rand_idx, rand_vertex, 0] = new_y
+
+            # rand_vertex = np.random.randint(0, 3)
+
+            # new_x = self.vertices[rand_idx, rand_vertex, 0] + np.array(np.rint(np.random.randn() * rand_x_sigma), dtype=np.int32)
+            # new_x = np.maximum(new_x, 0)
+            # new_x = np.minimum(new_x, self.im_width)
+            # self.vertices[rand_idx, rand_vertex, 0] = new_x
+
+            # new_y = self.vertices[rand_idx, rand_vertex, 0] + np.array(np.rint(np.random.randn() * rand_y_sigma), dtype=np.int32)
+            # new_y = np.maximum(new_y, 0)
+            # new_y = np.minimum(new_y, self.im_width)
+            # self.vertices[rand_idx, rand_vertex, 0] = new_y
         else:
             self.colors[rand_idx, 0:3] += \
-                np.array(np.rint(np.random.randn(num_mutate, 3) * rand_color_sigma), dtype=np.int16)
+                np.array(np.rint(np.random.randn() * rand_color_sigma), dtype=np.int16)
             self.colors[rand_idx, 3] += \
-                np.array(np.rint(np.random.randn(num_mutate,) * rand_alpha_sigma), dtype=np.int16)
-            self.colors = np.minimum(self.colors, 255)
-            self.colors = np.maximum(self.colors, 0)
+                np.array(np.rint(np.random.randn() * rand_alpha_sigma), dtype=np.int16)
+            self.colors[rand_idx, :] = np.minimum(self.colors[rand_idx, :], 255)
+            self.colors[rand_idx, :] = np.maximum(self.colors[rand_idx, :], 0)
 
-    def get_num_inactive_triangles(self):
+    def _generate_random_triangle(self, idx, color_data=None):
+        self.vertices[idx, :, 0] = np.random.randint(0, self.im_width, (3,))
+        self.vertices[idx, :, 1] = np.random.randint(0, self.im_height, (3,))
+
+        if color_data is None:
+            self.colors[idx, :] = np.random.randint(0, 256, (4,), dtype=np.int16)
+            return
+
+        hist = cv2.calcHist(
+            [self.render()], 
+            channels=[0, 1, 2], 
+            mask=None, 
+            histSize=color_data["num_bins"], 
+            ranges=color_data["ranges"])
+
+        inv_temp = 1
+        normalized_hist_diffs = (color_data["hist"] - hist) / (self.im_height * self.im_width)
+        tmp = np.exp(normalized_hist_diffs * inv_temp) 
+        prob_hist = tmp / np.sum(tmp)
+        prob_hist = prob_hist.flatten()
+
+        rand_color_idx = np.random.choice(len(prob_hist), p=prob_hist)
+        unraveled_idx = np.unravel_index(rand_color_idx, color_data["num_bins"])
+
+        color = [color_data["bin_centers"][i][unraveled_idx[i]] for i in range(3)]
+        color_delta = np.array(np.rint(np.random.random() * color_data["bin_sizes"] * 2 - color_data["bin_sizes"]), dtype=np.int16)
+        color = color + color_delta
+        color = np.minimum(color, 255)
+        color = np.maximum(color, 0)
+        self.colors[idx, :3] = color 
+
+        self.colors[idx, 3] = np.random.randint(0, 256, dtype=np.int16)
+
+    def num_inactive_triangles(self):
         return len(self._get_inactive_triangle_idx())
+
+    def remove_inactive(self):
+        inactive_indices, active_indices = self._get_inactive_triangle_idx(return_active=True)
+        if (len(inactive_indices) == 0):
+            return
+
+        active_vertices = np.copy(self.vertices[active_indices, :, :])
+        self.vertices[:len(active_indices), :, :] = active_vertices
+
+        active_colors = np.copy(self.colors[active_indices, :])
+        self.colors[:len(active_indices), :] = active_colors
+
+        self.num_triangles -= len(inactive_indices)
 
     def _get_inactive_triangle_idx(self, return_active=False):
         inactive_indices = []
@@ -129,6 +175,7 @@ class TriangleImage(object):
             area = 0.5 * ((pt1[0] * (pt2[1] - pt3[1])) + \
                           (pt2[0] * (pt3[1] - pt1[1])) + \
                           (pt3[0] * (pt1[1] - pt2[1])))
+            area = np.abs(area)
             if area < 0.1:
                 inactive_indices.append(i)
                 continue
@@ -138,25 +185,6 @@ class TriangleImage(object):
             return inactive_indices, active_indices
         else:
             return inactive_indices
-
-    def _reorder_inactive(self):
-        inactive_indices, active_indices = self._get_inactive_triangle_idx(return_active=True)
-
-        active_vertices = np.copy(self.vertices[active_indices, :, :])
-        inactive_vertices = np.copy(self.vertices[inactive_indices, :, :])
-        self.vertices[:len(active_indices), :, :] = active_vertices
-        self.vertices[len(active_indices):, :, :] = inactive_vertices
-
-        
-        active_colors = np.copy(self.colors[active_indices, :])
-        inactive_colors = np.copy(self.colors[inactive_indices, :])
-        self.colors[:len(active_indices), :] = active_colors
-        self.colors[len(active_indices):, :] = inactive_colors
-
-    def randomize(self):
-        self.vertices[:, :, 0] = np.random.randint(0, self.im_width, (self.num_triangles, 3))
-        self.vertices[:, :, 1] = np.random.randint(0, self.im_height, (self.num_triangles, 3))
-        self.colors = np.random.randint(0, 256, self.colors.shape, dtype=np.int16)
 
 
 def fitness_func(y, y_hat):
@@ -172,40 +200,32 @@ def _evaluate_item(triangle_image, target_image):
     cost = fitness_func(target_image, rendered_image)
     return cost
 
-def _mutate(triangle_image, num_mutate, regen_inactive):
-    triangle_image.mutate(num_mutate, regen_inactive=regen_inactive)
+def _mutate(triangle_image, color_data):
+    triangle_image.mutate(color_data)
+    return triangle_image
 
-def run_genetic_optimization(target_image, pop_size, num_triangles, num_epochs=20, save_dir=None):
+def run_genetic_optimization(
+    target_image, 
+    pop_size, 
+    max_triangles, 
+    num_epochs=20, 
+    save_dir=None,
+    color_data=None):
+
     assert(len(target_image.shape) == 3)
 
     # Initialize a population of triangles images
     print("Generating Initial Random Population ...")
     im_height = target_image.shape[0]
     im_width = target_image.shape[1]
-    population = [[0, TriangleImage(im_height, im_width, num_triangles)] for _ in range(pop_size)]
+    population = [[0, TriangleImage(im_height, im_width, max_triangles)] for _ in range(pop_size)]
     for _, item in population:
-        item.randomize()
+        item.init()
 
     # Number of parents to keep from each generation
     num_parents = int(pop_size/10) + 1
 
-    # The number of mutations each image will undergo.
-    # This number will be annealed down to 1. 
-    # It acts somewhat like a learning rate.
-    # We start off high, and go low.
-    num_mutate = 5
-
-    # We determine when to reduce the number of mutations
-    # by looking at how often the best cost has changed.
-    # If the best cost has stayed the same for a while,
-    # we will reduce the number of mutations.
-    prev_best_cost = None
-    changed_cost_list = []
-    changed_cost_list_max_len = 20
-    regen_inactive = False
-
     print("Running Optimization ...")
-
     pool = multiprocessing.Pool(12)
     for i in tqdm(range(num_epochs)):
         # Compute costs for each member of the population
@@ -215,6 +235,9 @@ def run_genetic_optimization(target_image, pop_size, num_triangles, num_epochs=2
         for idx in range(len(population)):
             population[idx][0] = costs[idx]
 
+        for j in range(num_parents):
+            population[j][1].remove_inactive()
+
         # Sort population by fitness cost.
         # The best members of the population will be 
         # copied and mutated.
@@ -222,49 +245,23 @@ def run_genetic_optimization(target_image, pop_size, num_triangles, num_epochs=2
         for j in range(num_parents, pop_size):
             population[j] = [0, copy.deepcopy(population[j % num_parents][1])]
 
-        mutate_list = pool.starmap(
-            _mutate,
-            [(population[j][1], num_mutate, regen_inactive) for j in range(num_parents, pop_size)])
-    
+        # mutate_list = pool.starmap(
+        #     _mutate,
+        #     [(population[j][1], color_data) for j in range(num_parents, pop_size)])
+        # for j in range(num_parents, pop_size):
+        #     population[j][1] = mutate_list[j-num_parents]
         for j in range(num_parents, pop_size):
-            population[j][1].mutate(5, regen_inactive=regen_inactive)
-        
+            population[j][1].mutate(color_data)
+
         if i % 10 == 0:
-            print("Epoch {}: num_inactive={}, lowest costs={}".format(
+            print("Epoch {}: num_triangles={}, num_inactive={}, lowest costs={}".format(
                 i, 
-                population[0][1].get_num_inactive_triangles(),
+                population[0][1].get_num_triangles(),
+                population[0][1].num_inactive_triangles(),
                 [np.round(x[0], 3) for x in population[:np.minimum(pop_size, 3)]]))
 
-        # Compute cost metrics to determine
-        # if the number of mutations should change.
-        best_cost = population[0][0]
-        changed_cost_list.append(prev_best_cost != best_cost)
-        if len(changed_cost_list) > changed_cost_list_max_len:
-            changed_cost_list.pop(0)
-        prev_best_cost = population[0][0]
-        
-        # When the cost metrics trigger a re-adjustment
-        # in how mutations are done, we will 
-        # 1) lower the number of mutations until it hits 1
-        # 2) lower the number of parents is reduced by half
-        # 3) turn on regen_inactive
-        frac_changed = float(np.sum(changed_cost_list)) / len(changed_cost_list)
-        if frac_changed < 0.7 and \
-           len(changed_cost_list) == changed_cost_list_max_len:
-            if num_mutate != 1:
-                num_mutate = num_mutate - 1
-                changed_cost_list = []
-                print("Reducing Mutations to {}".format(num_mutate))
-            elif num_parents > ((pop_size/20) + 1):
-                num_parents = num_parents - 1
-                changed_cost_list = []
-                print("Reducing number of parents to {}".format(num_parents))
-            elif (not regen_inactive):
-                regen_inactive = True
-                print("Turning on regen_inactive")
-
         # Save an intermediate image if needed.
-        if save_dir != None and i % 100 == 0:
+        if save_dir != None and i % 200 == 0:
             image_path = os.path.join(save_dir, "image_{}.png".format(i))
             imageio.imwrite(image_path, population[0][1].render())
 
@@ -292,7 +289,7 @@ if __name__ == "__main__":
         default=50,
         help="Population size.")
     parser.add_argument(
-        "--num_triangles",
+        "--max_triangles",
         action="store",
         type=int,
         default=100,
@@ -303,28 +300,56 @@ if __name__ == "__main__":
         type=str,
         default="images/out",
         help="Directory to save final output and intermediate steps.")
+    parser.add_argument(
+        "--use_hist",
+        action="store_true",
+        help="Set this flag to randomly generate triangle colors \
+              based on target image color histogram.")
+
     args = parser.parse_args()
 
-
-
     target_image = imageio.imread(args.image)
+
+    # if image is greyscale, copy to all color coordinates
     if len(target_image.shape) == 2:
         target_image = np.stack([target_image for _ in range(3)])
+
+    # if image has an alpha channel, get rid of it
     if target_image.shape[2] == 4:
         target_image = target_image[:, :, :3]
 
-    sol = run_genetic_optimization(
-        target_image, 
-        pop_size=args.pop, 
-        num_triangles=args.num_triangles,
-        num_epochs=args.nepochs,
-        save_dir=args.savedir)
-    sol_image = sol[1].render()
+    if args.use_hist:
+        color_data = dict()
+        color_data["num_bins"] = [10 for _ in range(3)]
+        color_data["ranges"] = [0, 255, 0, 255, 0, 255]
+        color_data["hist"] = cv2.calcHist(
+            [target_image], 
+            channels=[0, 1, 2], 
+            mask=None, 
+            histSize=color_data["num_bins"], 
+            ranges=color_data["ranges"])
+        color_data["bin_centers"] = []
+        for i in range(3):
+            edges = np.linspace(0, 255, color_data["num_bins"][i] + 1)
+            color_data["bin_centers"].append((edges[:-1] + edges[1:]) / 2)
+        color_data["bin_sizes"] = np.array([255./x for x in color_data["num_bins"]])
 
-    image_path = os.path.join(args.savedir, "image.png")
+        sol = run_genetic_optimization(
+            target_image, 
+            pop_size=args.pop, 
+            max_triangles=args.max_triangles,
+            num_epochs=args.nepochs,
+            save_dir=args.savedir,
+            color_data=color_data)
+        sol_image = sol[1].render()
+    else:
+        color_data = None
+
+    image_path = os.path.join(args.savedir, "image_{}.png".format(args.num_epochs))
     imageio.imwrite(image_path, sol_image)
 
     plt.imshow(sol_image)
     plt.show()
+
 
 
