@@ -1,13 +1,14 @@
 import copy
 import os
+import multiprocessing
+import pickle
+
 import numpy as np
 import tensorflow as tf
 import matplotlib.pyplot as plt
 import cv2
 import imageio
-import multiprocessing
 from tqdm import tqdm
-import pickle
 
 
 class TriangleImage(object):
@@ -59,12 +60,42 @@ class TriangleImage(object):
             self.image = cv2.addWeighted(self.image, 1 - shape_alpha, shape_im, shape_alpha, gamma=0)
         return self.image
 
+
+        color_data = dict()
+        color_data["num_bins"] = [10 for _ in range(3)]
+        color_data["ranges"] = [0, 255, 0, 255, 0, 255]
+        color_data["hist"] = cv2.calcHist(
+            [target_image], 
+            channels=[0, 1, 2], 
+            mask=None, 
+            histSize=color_data["num_bins"], 
+            ranges=color_data["ranges"])
+        color_data["bin_centers"] = []
+        for i in range(3):
+            edges = np.linspace(0, 255, color_data["num_bins"][i] + 1)
+            color_data["bin_centers"].append((edges[:-1] + edges[1:]) / 2)
+        color_data["bin_sizes"] = np.array([255./x for x in color_data["num_bins"]])
+
     def mutate(self, color_data=None):
         """
         Mutates the triangle image.
-        The mutated triangles will be randomly chosen.
-        The mutated triangles will either have a single vertex changed,
-        its color changed.  
+        It will with some probability, try to generate a new triangle (self.mutate_new_prob).
+        If it doesn't, it will shift a random triangle with self.mutate_pos_prob.
+        Otherwise, it will change the color of a random triangle.
+
+        If color_data is not None, 
+        new triangles will be generated using a color histogram.
+        Colors that are missing in the current triangle_image but exist
+        in the target_image will have a higher probability of being generated.
+        color_data is a dict, that must have the following keys and values.
+        1) "num_bins" - list of 3 integers determining how many bins the histogram should have in each dimension.
+        2) "ranges" - list of [min, max, min, max, min, max] limits for the values that the numbers can take.
+        3) "hist" - the histogram for the target image, generated using the parameters in this dict
+        4) "bin_centers" - [np.array, np.array, np.array], the center value of each bin for each dimension
+        5) "bin_sizes" - list of 3 floats, the size of bins for each dimension
+
+        Keyword Arguments:
+            color_data {dict or None} -- (default: {None})
         """
 
         if (self.num_triangles != self.max_triangles) and \
@@ -105,7 +136,18 @@ class TriangleImage(object):
             self.colors[rand_idx, :] = np.minimum(self.colors[rand_idx, :], 255)
             self.colors[rand_idx, :] = np.maximum(self.colors[rand_idx, :], 0)
 
+
     def _generate_random_triangle(self, idx, color_data=None):
+        """
+        Generates a random triangle at index *idx* in the 
+        vertices and colors arrays.
+
+        Arguments:
+            idx {int} -- Index to generate a new triangle at.
+
+        Keyword Arguments:
+            color_data {dict} -- see mutate() (default: {None})
+        """
         self.vertices[idx, :, 0] = np.random.randint(0, self.im_width, (3,))
         self.vertices[idx, :, 1] = np.random.randint(0, self.im_height, (3,))
 
@@ -113,6 +155,7 @@ class TriangleImage(object):
             self.colors[idx, :] = np.random.randint(0, 256, (4,), dtype=np.int16)
             return
 
+        # Compute color histogram for rendered image
         hist = cv2.calcHist(
             [self.render()], 
             channels=[0, 1, 2], 
@@ -120,28 +163,39 @@ class TriangleImage(object):
             histSize=color_data["num_bins"], 
             ranges=color_data["ranges"])
 
+        # Creating a probability distribution to draw from
         inv_temp = 1
         normalized_hist_diffs = (color_data["hist"] - hist) / (self.im_height * self.im_width)
         tmp = np.exp(normalized_hist_diffs * inv_temp) 
         prob_hist = tmp / np.sum(tmp)
         prob_hist = prob_hist.flatten()
 
+        # Choose a random bin
         rand_color_idx = np.random.choice(len(prob_hist), p=prob_hist)
         unraveled_idx = np.unravel_index(rand_color_idx, color_data["num_bins"])
 
+        # Sample a random color within 1 bin_size of the center bin value
         color = [color_data["bin_centers"][i][unraveled_idx[i]] for i in range(3)]
         color_delta = np.array(np.rint(np.random.random() * color_data["bin_sizes"] * 2 - color_data["bin_sizes"]), dtype=np.int16)
         color = color + color_delta
         color = np.minimum(color, 255)
         color = np.maximum(color, 0)
-        self.colors[idx, :3] = color 
 
+        self.colors[idx, :3] = color 
         self.colors[idx, 3] = np.random.randint(0, 256, dtype=np.int16)
 
     def num_inactive_triangles(self):
+        """
+        Gets the number of inactive triangles.
+        See _get_inactive_triangle_idx()
+        """
         return len(self._get_inactive_triangle_idx())
 
     def remove_inactive(self):
+        """
+        Removes all triangles that are inactive, and shifts
+        the active triangles to take up the top *num_active* positions.
+        """
         inactive_indices, active_indices = self._get_inactive_triangle_idx(return_active=True)
         if (len(inactive_indices) == 0):
             return
@@ -155,6 +209,18 @@ class TriangleImage(object):
         self.num_triangles -= len(inactive_indices)
 
     def _get_inactive_triangle_idx(self, return_active=False):
+        """
+        Gets the indices of the inactive triangles.
+        An inactive triangle is classified as either having a value of 0 for the transparency,
+        or having very small area.
+
+        Keyword Arguments:
+            return_active {bool} -- If True, return (inactive_indices, active_indices) (default: {False})
+                Otherwise, just returns the inactive_indices
+        
+        Returns:
+            List[int] or (List[int], List[int])
+        """
         inactive_indices = []
         active_indices = []
         for i in range(self.num_triangles):
@@ -180,22 +246,30 @@ class TriangleImage(object):
             return inactive_indices
 
 
-def fitness_func(y, y_hat):
+def cost_func(y, y_hat):
+    """
+    Computes the cost function between two images.
+    The cost function is the sum of absolute difference of r,g,b values,
+    averaged across the whole image.
+
+    Arguments:
+        y {3d np.array} -- Rendered image.
+        y_hat {3d np.array} -- Target image.
+
+    Returns:
+        float -- the cost function.
+    """
     cost = np.mean(np.sum(np.abs(y.astype(np.int16) - y_hat.astype(np.int16)), axis=2))
     return cost
 
 # Costly function that will take a triangle_image, render it,
-# and then compute the fitness function.
+# and then compute the cost function.
 # This is separated out to be used with multiprocessing submodule
 # to vastly speed up computation of large populations.
 def _evaluate_item(triangle_image, target_image):
     rendered_image = triangle_image.render()
-    cost = fitness_func(target_image, rendered_image)
+    cost = cost_func(target_image, rendered_image)
     return cost
-
-def _mutate(triangle_image, color_data):
-    triangle_image.mutate(color_data)
-    return triangle_image
 
 def run_genetic_optimization(
     target_image, 
@@ -228,22 +302,18 @@ def run_genetic_optimization(
         for idx in range(len(population)):
             population[idx][0] = costs[idx]
 
+
+        # Sort population by fitness cost.
+        population.sort(key=lambda x: x[0])
+
+        # Remove inactive triangles of all the parents
+        # before they are copied for the next generation.
         for j in range(num_parents):
             population[j][1].remove_inactive()
 
-        # Sort population by fitness cost.
-        # The best members of the population will be 
-        # copied and mutated.
-        population.sort(key=lambda x: x[0])
+        # The parents will be copied and mutated.
         for j in range(num_parents, pop_size):
             population[j] = [0, copy.deepcopy(population[j % num_parents][1])]
-
-        # mutate_list = pool.starmap(
-        #     _mutate,
-        #     [(population[j][1], color_data) for j in range(num_parents, pop_size)])
-        # for j in range(num_parents, pop_size):
-        #     population[j][1] = mutate_list[j-num_parents]
-        for j in range(num_parents, pop_size):
             population[j][1].mutate(color_data)
 
         if i % 10 == 0:
@@ -270,9 +340,10 @@ def run_genetic_optimization(
                 image_path = os.path.join(save_dir, "image_{}.png".format(i))
                 imageio.imwrite(image_path, population[0][1].render())
 
+        # Periodically save the population to a pickle file
         if i % 100 == 0 and save_dir != None:
             path = os.path.join(save_dir, "data.pickle")
-            pickle.dump(TriangleImage, open(path, "wb"))
+            pickle.dump(population, open(path, "wb"))
 
     return population[0]
 
@@ -318,11 +389,11 @@ if __name__ == "__main__":
 
     target_image = imageio.imread(args.image)
 
-    # if image is greyscale, copy to all color coordinates
+    # If image is greyscale, copy to all color coordinates
     if len(target_image.shape) == 2:
         target_image = np.stack([target_image for _ in range(3)])
 
-    # if image has an alpha channel, get rid of it
+    # If image has an alpha channel, get rid of it
     if target_image.shape[2] == 4:
         target_image = target_image[:, :, :3]
 
