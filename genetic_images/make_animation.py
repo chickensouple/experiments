@@ -11,18 +11,10 @@ def make_animation(directory, target_image, save_file):
     for file in file_list:
         if file == "image.png":
             continue
+        if ".pickle" in file:
+            continue
         file_nums.append(int(file.split(".")[0].split("_")[1]))
     file_nums.sort()
-    
-    # filtered_file_nums = []
-    # for num in file_nums:
-    #     if num < 5000:
-    #         filtered_file_nums.append(num)
-    #     elif num < 10000 and num % 1000 == 0:
-    #         filtered_file_nums.append(num)
-    #     elif num % 2000 == 0:
-    #         filtered_file_nums.append(num)
-    # file_nums = filtered_file_nums
     print(file_nums)
 
     def update_animation(num, file_nums, directory):
@@ -46,8 +38,6 @@ def make_animation(directory, target_image, save_file):
         plt.imshow(target_image)
         plt.title("Target Image")
 
-        plt.gcf().subplots_adjust(left=0, bottom=0, right=1, top=1, wspace=None, hspace=None)
-
     fig = plt.figure(figsize=[12.8, 4.6], dpi=100)
     anim = animation.FuncAnimation(
         fig,
@@ -60,7 +50,7 @@ def make_animation(directory, target_image, save_file):
     if save_file is not None:
         # This can be a pretty big animation.
         # You may need to remove the memory limits on imagemagick.
-        anim.save('images/saturnv_animated.gif', writer='imagemagick', fps=20)
+        anim.save(save_file, writer="imagemagick", fps=20)
         print("Done saving animation.")
     plt.show()
 

@@ -7,6 +7,7 @@ import cv2
 import imageio
 import multiprocessing
 from tqdm import tqdm
+import pickle
 
 
 class TriangleImage(object):
@@ -30,7 +31,7 @@ class TriangleImage(object):
         # this uses int16 so that arithmetic won't over/underflow
         self.colors = np.zeros((self.max_triangles, 4), dtype=np.int16)
 
-        self.mutate_new_prob = 0.02
+        self.mutate_new_prob = 0.03
         self.mutate_pos_prob = 0.5
 
     def init(self):
@@ -75,11 +76,14 @@ class TriangleImage(object):
         # index of random triangle to mutate
         rand_idx = np.random.randint(0, self.num_triangles)
 
+        # Perturbations are generated from a gaussian distribution
+        # with the following standard deviations.
         rand_x_sigma = self.im_width * 0.05
         rand_y_sigma = self.im_height * 0.05
         rand_color_sigma = 20
         rand_alpha_sigma = 10
         if np.random.random() < self.mutate_pos_prob:
+            # randomly perturb 1, 2, or 3 vertices
             num_vertices = np.random.randint(1, 4)
             rand_vertex = np.random.randint(0, 3, (num_vertices,))
 
@@ -92,19 +96,8 @@ class TriangleImage(object):
             new_y = np.maximum(new_y, 0)
             new_y = np.minimum(new_y, self.im_width)
             self.vertices[rand_idx, rand_vertex, 0] = new_y
-
-            # rand_vertex = np.random.randint(0, 3)
-
-            # new_x = self.vertices[rand_idx, rand_vertex, 0] + np.array(np.rint(np.random.randn() * rand_x_sigma), dtype=np.int32)
-            # new_x = np.maximum(new_x, 0)
-            # new_x = np.minimum(new_x, self.im_width)
-            # self.vertices[rand_idx, rand_vertex, 0] = new_x
-
-            # new_y = self.vertices[rand_idx, rand_vertex, 0] + np.array(np.rint(np.random.randn() * rand_y_sigma), dtype=np.int32)
-            # new_y = np.maximum(new_y, 0)
-            # new_y = np.minimum(new_y, self.im_width)
-            # self.vertices[rand_idx, rand_vertex, 0] = new_y
         else:
+            # randomly change color
             self.colors[rand_idx, 0:3] += \
                 np.array(np.rint(np.random.randn() * rand_color_sigma), dtype=np.int16)
             self.colors[rand_idx, 3] += \
@@ -261,9 +254,25 @@ def run_genetic_optimization(
                 [np.round(x[0], 3) for x in population[:np.minimum(pop_size, 3)]]))
 
         # Save an intermediate image if needed.
-        if save_dir != None and i % 200 == 0:
-            image_path = os.path.join(save_dir, "image_{}.png".format(i))
-            imageio.imwrite(image_path, population[0][1].render())
+        if save_dir != None:
+            save = False
+            if i < 300 and i % 20 == 0:
+                save = True
+            elif i < 1000 and i % 100 == 0:
+                save = True
+            elif i < 3000 and i % 200 == 0:
+                save = True
+            elif i < 15000 and i % 500 == 0:
+                save = True
+            elif i % 1000 == 0:
+                save = True
+            if save: 
+                image_path = os.path.join(save_dir, "image_{}.png".format(i))
+                imageio.imwrite(image_path, population[0][1].render())
+
+        if i % 100 == 0 and save_dir != None:
+            path = os.path.join(save_dir, "data.pickle")
+            pickle.dump(TriangleImage, open(path, "wb"))
 
     return population[0]
 
@@ -305,7 +314,6 @@ if __name__ == "__main__":
         action="store_true",
         help="Set this flag to randomly generate triangle colors \
               based on target image color histogram.")
-
     args = parser.parse_args()
 
     target_image = imageio.imread(args.image)
@@ -333,19 +341,19 @@ if __name__ == "__main__":
             edges = np.linspace(0, 255, color_data["num_bins"][i] + 1)
             color_data["bin_centers"].append((edges[:-1] + edges[1:]) / 2)
         color_data["bin_sizes"] = np.array([255./x for x in color_data["num_bins"]])
-
-        sol = run_genetic_optimization(
-            target_image, 
-            pop_size=args.pop, 
-            max_triangles=args.max_triangles,
-            num_epochs=args.nepochs,
-            save_dir=args.savedir,
-            color_data=color_data)
-        sol_image = sol[1].render()
     else:
         color_data = None
 
-    image_path = os.path.join(args.savedir, "image_{}.png".format(args.num_epochs))
+    sol = run_genetic_optimization(
+        target_image, 
+        pop_size=args.pop, 
+        max_triangles=args.max_triangles,
+        num_epochs=args.nepochs,
+        save_dir=args.savedir,
+        color_data=color_data)
+    sol_image = sol[1].render()
+
+    image_path = os.path.join(args.savedir, "image_{}.png".format(args.nepochs))
     imageio.imwrite(image_path, sol_image)
 
     plt.imshow(sol_image)
