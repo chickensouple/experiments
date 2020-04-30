@@ -1,7 +1,6 @@
 import numpy as np
 import enum
 
-
 class GameBase(object):
     class Status(enum.IntEnum):
         IN_PROGRESS = 0
@@ -44,11 +43,36 @@ class GameBase(object):
         else:
             return -1
 
-
     def get_state(self):
         raise Exception("Not yet implemented.")
 
     def set_state(self, state):
         raise Exception("Not yet implemented.")
+
+class GameActor(object):
+    def get_action(self, game_state):
+        """
+        Must return a valid action.
+        """
+        raise Exception("Not yet implemented")
+
+def run_game(game, actor1, actor2):
+    data_dict = dict()
+    data_dict["actions"] = []
+    
+    game.reset()
+
+    while game.get_game_status() == GameBase.Status.IN_PROGRESS:
+        curr_player = game.get_curr_player()
+        if curr_player == GameBase.Player.PLAYER1:
+            action = actor1.get_action(game.get_state())
+        else:
+            action = actor2.get_action(game.get_state())
+        data_dict["actions"].append(action)
+        game.step(action)
+
+    data_dict["game_status"] = game.get_game_status()
+    return data_dict
+
 
 

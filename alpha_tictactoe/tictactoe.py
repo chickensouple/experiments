@@ -1,6 +1,6 @@
 import numpy as np
 import enum
-from game_base import GameBase
+from game_base import GameBase, GameActor
 
 
 class TicTacToe(GameBase):
@@ -158,23 +158,41 @@ class TicTacToe(GameBase):
         return GameBase.Status.IN_PROGRESS
 
 
+class TicTacToeHumanActor(GameActor):
+    def __init__(self):
+        self.game = TicTacToe()
+
+    def get_action(self, game_state):
+        self.game.set_state(game_state)
+        self.game.print_board()
+        while True:
+            action = input("Enter an Action: ")
+            try:
+                action = action.split(" ")
+                action = tuple([int(idx) for idx in action])
+                if not self.game._check_valid_action(action):
+                    raise Exception("Not a valid action.")
+                break
+            except Exception as e:
+                print(e)
+                self.print_help()
+        return action
+
+    def print_help(self):
+        print("Actions are input as 2 numbers separated by a space, "
+              "indicating the row and column of where to move next.")
+
+
 if __name__ == "__main__":
     ttt = TicTacToe()
     print("Actions are input as a 2 numbers seperated by a space, indicating the row and column.")
     
+    actor = TicTacToeHumanActor()
     while ttt.get_game_status() == GameBase.Status.IN_PROGRESS:
-        ttt.print_board()
         print("Player {}'s turn.".format(ttt.get_curr_player()))
-        action = input("Enter an action (row, col): ")
-        try:
-            action = action.split(" ")
-            action = tuple([int(idx) for idx in action])
 
-            ttt.step(action)
-        except Exception as e:
-            print(e)
-            print("Not an valid action. Try again.")
-            continue
+        action = actor.get_action(ttt.get_state())
+        ttt.step(action)
     ttt.print_board()
     print("End Game Status: {}".format(ttt.get_game_status().name))
 

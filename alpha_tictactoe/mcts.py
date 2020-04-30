@@ -2,10 +2,10 @@ import numpy as np
 import copy
 import math
 
-from game_base import GameBase 
+from game_base import GameBase, GameActor
 from tree import Tree
 
-class NodeData(object):
+class MCTSNodeData(object):
     def __init__(self, 
         value_est=0, 
         num_visits=0, 
@@ -20,14 +20,20 @@ class NodeData(object):
         self.player = player
     
     def __str__(self):  
-        return "(Player {}, Value: {}, Visits: {})".format(self.player, self.value_est, self.num_visits)
+        return "(Player {}, Value: {}, Visits: {})".format(
+            self.player, 
+            self.value_est, 
+            self.num_visits)
 
     def __repr__(self):
         return self.__str__()
 
-class MCTS(object):
-    def __init__(self, game):
+class MCTSActor(GameActor):
+    def __init__(self, game, num_expansions=300, value_network=None):
         self.game = game
+        self.num_expansions = num_expansions
+        self.value_network = value_network
+
         self.tree = Tree()
 
     def compute_heuristic(self, node_data, player):
@@ -61,15 +67,18 @@ class MCTS(object):
             self.game.step(action)
         return self.game.get_outcome(player)
 
-    def search(self, game_state, player, num_expansions=100):
+    def get_action(self, game_state):
+        self.game.set_state(game_state)
+        curr_player = self.game.get_curr_player()
+
         if self.tree.num_nodes() == 0:
             # add in root node
-            initial_node = NodeData(
+            initial_node = MCTSNodeData(
                 value_est=0, 
                 num_visits=0, 
                 game_state=game_state, 
                 prev_action=None,
-                player=player)
+                player=curr_player)
             self.tree.insert_node(initial_node, None)
         else:
             # do breadth first search for a matching child
@@ -92,24 +101,28 @@ class MCTS(object):
 
             found_idx = breadth_first_search(self.tree, game_state)
             if found_idx is None:
+                # clear tree
+                self.tree.reset()
+
                 # add in root node
-                initial_node = NodeData(
+                initial_node = MCTSNodeData(
                     value_est=0, 
                     num_visits=0, 
                     game_state=game_state, 
                     prev_action=None,
-                    player=player)
+                    player=curr_player)
                 self.tree.insert_node(initial_node, None)
-            self.tree.rebase(found_idx)
+            else:
+                self.tree.rebase(found_idx)
 
-        for _ in range(num_expansions):
+        for _ in range(self.num_expansions):
             # select nodes in tree until leaf node
             curr_idx = 0
             idx_list = [curr_idx]
-            curr_idx = self.select(curr_idx, player)
+            curr_idx = self.select(curr_idx, curr_player)
             while curr_idx is not None:
                 idx_list.append(curr_idx)
-                curr_idx = self.select(curr_idx, player)
+                curr_idx = self.select(curr_idx, curr_player)
 
             leaf_node_idx = idx_list[-1]
             
@@ -125,7 +138,7 @@ class MCTS(object):
                     for action in actions:
                         self.game.set_state(leaf_data.game_state)
                         self.game.step(action)
-                        new_node_data = NodeData(
+                        new_node_data = MCTSNodeData(
                             value_est=0, 
                             num_visits=0, 
                             game_state=self.game.get_state(), 
@@ -133,11 +146,16 @@ class MCTS(object):
                             player=self.game.get_curr_player())
                         self.tree.insert_node(new_node_data, leaf_node_idx)
 
-                    leaf_node_idx = self.select(leaf_node_idx, player)
+                    leaf_node_idx = self.select(leaf_node_idx, curr_player)
                     idx_list.append(leaf_node_idx)
 
             # simulate and update values for every node visited
-            value_est = self.simulate(leaf_data.game_state, player)
+            value_est = self.simulate(leaf_data.game_state, curr_player)
+            if self.value_network is not None:
+                board_state = leaf_data.game_state[:9].reshape((1, 3, 3, 1))
+                board_state = np.array(board_state, dtype=np.float32)
+                value_network_est = self.value_network(board_state)
+                value_est = (0.5) * value_est + (0.5) * value_network_est
 
             for idx in idx_list:
                 node_data = self.tree.get_node_data(idx)
@@ -156,7 +174,8 @@ class MCTS(object):
         return best_action
 
 if __name__ == "__main__":
-    from tictactoe import TicTacToe
+    from tictactoe import TicTacToe, TicTacToeHumanActor
+    from game_base import run_game
     import argparse
 
     parser = argparse.ArgumentParser(
@@ -170,6 +189,12 @@ if __name__ == "__main__":
         default=1,
         choices=[1, 2],
         help="choose to play as player 1 or 2")
+    parser.add_argument(
+        "--N",
+        action="store",
+        type=int,
+        default=300,
+        help="Number of expansions per search of MCTS tree")
     args = parser.parse_args()
 
     if args.player == 1:
@@ -177,34 +202,17 @@ if __name__ == "__main__":
     else:
         computer_player = TicTacToe.GridState.PLAYER1
 
-    ttt = TicTacToe()
+    human_actor = TicTacToeHumanActor()
     ttt_search = TicTacToe()
-    mcts = MCTS(ttt_search)
+    mcts_actor = MCTSActor(ttt_search, num_expansions=args.N)
 
-    while ttt.get_game_status() == GameBase.Status.IN_PROGRESS:
-        curr_player = ttt.get_curr_player()
-
-        if curr_player == computer_player:
-            
-            state = ttt.get_state()
-            action = mcts.search(state, computer_player, num_expansions=300)
-            ttt.step(action)
-            print(mcts.tree.get_node_data(0).num_visits)
-        else:
-            ttt.print_board()
-            while True:
-                action = input("Enter an action (row, col): ")
-                try:
-                    action = action.split(" ")
-                    action = tuple([int(idx) for idx in action])
-
-                    ttt.step(action)
-                    break
-                except Exception as e:
-                    print(e)
-                    print("Not an valid action. Try again.")
-
+    ttt = TicTacToe()
+    human_actor.print_help()
+    if args.player == 1:
+        result = run_game(ttt, human_actor, mcts_actor)
+    else:
+        result = run_game(ttt, mcts_actor, human_actor)
     ttt.print_board()
-    print("End Game Status: {}".format(ttt.get_game_status().name))
+    print("End Game Status: {}".format(result["game_status"].name))
 
 
