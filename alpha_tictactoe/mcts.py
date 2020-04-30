@@ -6,6 +6,19 @@ from game_base import GameBase, GameActor
 from tree import Tree
 
 class MCTSNodeData(object):
+    """
+    Data contained in a node of the MCTS
+    Attributes:
+        value_est {float} -- Takes on values [-1, 1]
+            This is the estimate of the value of the game_state at this node.
+            1 means it is estimated player 1 will win with 100% probability.
+            0 means it is estimated that it will be a tie with 100% probability.
+            -1 means it is estimated player2 will win with 100% probability.
+        num_visits {int} -- The number of times this node has been updated.
+        game_state -- the state of the game given by GameBase.get_state()
+        prev_action -- the action taken from parent node to arrive at this node.
+        player {GameBase.Player} -- which player's turn is at this node.
+    """
     def __init__(self, 
         value_est=0, 
         num_visits=0, 
@@ -36,15 +49,15 @@ class MCTSActor(GameActor):
 
         self.tree = Tree()
 
-    def compute_heuristic(self, node_data, player):
+    def compute_heuristic(self, node_data):
         value_est = node_data.value_est
-        if (node_data.player != player):
+        if (node_data.player == GameBase.Player.PLAYER2):
             value_est = -value_est
         num_simulations = self.tree.get_node_data(0).num_visits
         heuristic = value_est + np.sqrt(num_simulations / (1 + node_data.num_visits))
         return heuristic
 
-    def select(self, idx, player):
+    def select(self, idx):
         children = self.tree.get_children(idx)
         if len(children) == 0:
             return None
@@ -52,7 +65,7 @@ class MCTSActor(GameActor):
         exploration_vals = []
         for child_idx in children:
             node_data = self.tree.get_node_data(child_idx)
-            exp_val = self.compute_heuristic(node_data, player)
+            exp_val = self.compute_heuristic(node_data)
             exploration_vals.append(exp_val)  
 
         new_idx = children[np.argmax(exploration_vals)]
@@ -65,7 +78,14 @@ class MCTSActor(GameActor):
             rand_idx = np.random.randint(len(actions))
             action = actions[rand_idx]
             self.game.step(action)
-        return self.game.get_outcome(player)
+
+        status = self.game.get_game_status()
+        if status == GameBase.Status.PLAYER1_WIN:
+            return 1
+        elif status == GameBase.Status.PLAYER2_WIN:
+            return -1
+        else:
+            return 0
 
     def get_action(self, game_state):
         self.game.set_state(game_state)
@@ -119,10 +139,10 @@ class MCTSActor(GameActor):
             # select nodes in tree until leaf node
             curr_idx = 0
             idx_list = [curr_idx]
-            curr_idx = self.select(curr_idx, curr_player)
+            curr_idx = self.select(curr_idx)
             while curr_idx is not None:
                 idx_list.append(curr_idx)
-                curr_idx = self.select(curr_idx, curr_player)
+                curr_idx = self.select(curr_idx)
 
             leaf_node_idx = idx_list[-1]
             
@@ -146,7 +166,7 @@ class MCTSActor(GameActor):
                             player=self.game.get_curr_player())
                         self.tree.insert_node(new_node_data, leaf_node_idx)
 
-                    leaf_node_idx = self.select(leaf_node_idx, curr_player)
+                    leaf_node_idx = self.select(leaf_node_idx)
                     idx_list.append(leaf_node_idx)
 
             # simulate and update values for every node visited
@@ -169,7 +189,11 @@ class MCTSActor(GameActor):
         for child_idx in children:
             child_data = self.tree.get_node_data(child_idx)
             value_list.append(child_data.value_est)
-        best_idx = np.argmax(value_list)
+
+        if curr_player == GameBase.Player.PLAYER1:
+            best_idx = np.argmax(value_list)
+        else:
+            best_idx = np.argmin(value_list)
         best_action = self.tree.get_node_data(children[best_idx]).prev_action 
         return best_action
 
