@@ -33,8 +33,8 @@ class Tree(object):
         If parent_idx is None, then it will be denoted as a root node.
         This will return the idx of the new node.
         """
+        new_idx = len(self.nodes)
         self.nodes.append(node_data)
-        new_idx = len(self.nodes) - 1
         if parent_idx is not None:
             assert(parent_idx < new_idx)
             self.p_c_edges[parent_idx].append(new_idx)
@@ -53,13 +53,13 @@ class Tree(object):
         """
         return self.nodes[node_idx]
 
-    def rebase(self, node_idx):
+    def rebase(self, root_idx):
         """
-        Rebases the tree so node_idx is the new root node.
+        Rebases the tree so root_idx is the new root node.
         Any unconnected nodes will be deleted. This invalidates 
         all existing node indices.
         """
-        subtree_nodes = self.find_subtree_nodes(node_idx)
+        subtree_nodes = sorted(set(self.find_subtree_nodes(root_idx)))
         new_nodes = []
         new_p_c_edges = dict()
         old_to_new_mapping = dict()

@@ -86,7 +86,7 @@ class TicTacToe(GameBase):
 
         if not self._check_valid_action(action):
             self.print_board()
-            raise Exception("Invalid Action")
+            raise Exception("Invalid Action: {}".format(action))
 
         if self.curr_player == GameBase.Player.PLAYER1:
             self.board[action] = TicTacToe.GridState.PLAYER1

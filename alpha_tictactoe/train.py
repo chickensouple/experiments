@@ -7,7 +7,7 @@ from mcts import MCTSActor
 from tictactoe import TicTacToe
 from game_base import GameBase, run_game
 from neural_nets import ValueNetwork
-
+from replay_buffer import ReplayBuffer
 
 # gpu setup copied from https://www.tensorflow.org/guide/gpu
 gpus = tf.config.experimental.list_physical_devices('GPU')
@@ -22,7 +22,6 @@ if gpus:
         # Memory growth must be set before GPUs have been initialized
         print(e)
 
-
 if __name__ == "__main__":
     value_network = ValueNetwork()
     ttt_mcts = TicTacToe()
@@ -31,14 +30,11 @@ if __name__ == "__main__":
     optimal_data = np.load("data/minmax_cache.npy")
     optimal_actor = OptimalActor(optimal_data)
 
-
     ttt = TicTacToe()
 
     optimizer = tf.keras.optimizers.Adam()
-
-    state_list = []
-    value_list = []
-
+    buffer_config = {"states": (3, 3, 1), "values": 1}
+    replay_buffer = ReplayBuffer(100, buffer_config)
     for i in range(100):
         if i % 2 == 0:
             data_dict = run_game(ttt, optimal_actor, mcts_actor)
@@ -53,17 +49,17 @@ if __name__ == "__main__":
         else:
             value = 0
 
-
-        state_list.extend([x[:9].reshape(3, 3, 1) for x in data_dict["states"]])
-        value_list.extend([value for _ in data_dict["states"]])
+        states = np.array([x[:9].reshape(3, 3, 1) for x in data_dict["states"]])
+        values = np.array([[value] for _ in data_dict["states"]])
+        data_batch = {"states": states, "values": values}
+        replay_buffer.add_data(data_batch)
 
         if i > 5:
             batch_size = 32
-            rand_idx = np.random.randint(len(state_list), size=(batch_size,))
-            x = [state_list[i] for i in rand_idx]
-            x = np.array(x, dtype=np.float32)
-            y = [value_list[i] for i in rand_idx]
-            y = np.array(y, dtype=np.float32).reshape((-1, 1))
+            sampled_data = replay_buffer.sample(batch_size)
+
+            x = np.array(sampled_data["states"], dtype=np.float32)
+            y = np.array(sampled_data["values"], dtype=np.float32)
 
             with tf.GradientTape() as tape:
                 values = value_network(x)

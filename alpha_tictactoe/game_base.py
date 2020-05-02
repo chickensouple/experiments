@@ -90,8 +90,12 @@ def run_game(game, actor1, actor2):
             action = actor2.get_action(curr_state)
         data_dict["actions"].append(action)
         data_dict["states"].append(curr_state)
-        game.step(action)
-        
+
+        try:
+            game.step(action)
+        except:
+            import pdb; pdb.set_trace()
+            pass
     # appending final state
     data_dict["states"].append(game.get_state())
 

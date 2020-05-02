@@ -18,25 +18,29 @@ class MCTSNodeData(object):
         game_state -- the state of the game given by GameBase.get_state()
         prev_action -- the action taken from parent node to arrive at this node.
         player {GameBase.Player} -- which player's turn is at this node.
+        value_net_cache {float} -- cached value of the value_network
     """
     def __init__(self, 
         value_est=0, 
         num_visits=0, 
         game_state=None, 
         prev_action=None, 
-        player=None):
+        player=None,
+        value_net_cache=None):
 
         self.value_est = value_est
         self.num_visits = num_visits
         self.game_state = game_state
         self.prev_action = prev_action
         self.player = player
+        self.value_net_cache = value_net_cache
     
     def __str__(self):  
-        return "(Player {}, Value: {}, Visits: {})".format(
+        return "(Player {}, Value: {}, Visits: {}, Prev Action: {})".format(
             self.player, 
             self.value_est, 
-            self.num_visits)
+            self.num_visits,
+            self.prev_action)
 
     def __repr__(self):
         return self.__str__()
@@ -87,9 +91,34 @@ class MCTSActor(GameActor):
         else:
             return 0
 
+
+    def _check_tree(self, idx, level=0):
+        data = self.tree.get_node_data(idx)
+        self.game.set_state(data.game_state)
+        children = self.tree.get_children(idx)
+        actions = self.game.get_valid_actions()
+        
+        valid_list = []
+        for child_idx in children:
+            prev_action = self.tree.get_node_data(child_idx).prev_action
+            if prev_action not in actions:
+                print("========\nFailure:\n{}\nlevel: {}\nprev_action: {}\nidx: {}\n".format(
+                    data.game_state[:9].reshape((3, 3)),
+                    level,
+                    prev_action,
+                    child_idx
+                ))
+                return False
+            valid_list.append(self._check_tree(child_idx, level+1))
+
+        valid = np.all(valid_list)
+        return valid
+
     def get_action(self, game_state):
         self.game.set_state(game_state)
         curr_player = self.game.get_curr_player()
+
+
 
         if self.tree.num_nodes() == 0:
             # add in root node
@@ -133,7 +162,9 @@ class MCTSActor(GameActor):
                     player=curr_player)
                 self.tree.insert_node(initial_node, None)
             else:
+                # prev_tree = copy.deepcopy(self.tree)
                 self.tree.rebase(found_idx)
+
 
         for _ in range(self.num_expansions):
             # select nodes in tree until leaf node
@@ -149,8 +180,9 @@ class MCTSActor(GameActor):
             # expand
             leaf_data = self.tree.get_node_data(leaf_node_idx)
 
-            # if this node has never been expanded, add all next states
-            # and then, choose one to be new leaf node to simulate
+            # this node has never been visited yet, don't expand, just simulate().
+            # If it has been visited and is a leaf node, expand the node
+            # and choose a new leaf node from the children actions to simulate.
             if leaf_data.num_visits != 0:
                 self.game.set_state(leaf_data.game_state)
                 actions = self.game.get_valid_actions()
@@ -167,6 +199,7 @@ class MCTSActor(GameActor):
                         self.tree.insert_node(new_node_data, leaf_node_idx)
 
                     leaf_node_idx = self.select(leaf_node_idx)
+                    leaf_data = self.tree.get_node_data(leaf_node_idx)
                     idx_list.append(leaf_node_idx)
 
             # simulate and update values for every node visited
@@ -174,8 +207,11 @@ class MCTSActor(GameActor):
             if self.value_network is not None:
                 board_state = leaf_data.game_state[:9].reshape((1, 3, 3, 1))
                 board_state = np.array(board_state, dtype=np.float32)
-                value_network_est = self.value_network(board_state)
-                value_est = (0.5) * value_est + (0.5) * value_network_est
+                if leaf_data.value_net_cache is None:
+                    # cache value_net_cache for later
+                    leaf_data.value_net_cache = self.value_network(board_state)
+                    self.tree.update_node_data(leaf_node_idx, leaf_data)
+                value_est = (0.5) * value_est + (0.5) * leaf_data.value_net_cache
 
             for idx in idx_list:
                 node_data = self.tree.get_node_data(idx)

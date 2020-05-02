@@ -25,7 +25,7 @@ if gpus:
 
 if __name__ == "__main__":
     num_runs = 1000
-    num_expansions = 100
+    num_expansions = 500
 
     ttt = TicTacToe()
 
