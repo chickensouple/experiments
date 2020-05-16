@@ -2,6 +2,9 @@ import numpy as np
 import tensorflow as tf
 import scipy.optimize
 
+# TODO: subclass this to provide custom gradient with tf.custom_gradient decorator
+
+
 class DiscreteSystemModel(object):
     def __init__(self, state_dim, control_dim):
         self.state_dim = state_dim
@@ -196,8 +199,8 @@ class ScipyMPCOptProblem(object):
              "fun": self._scipy_eq_constraints,
              "jac": self._scipy_eq_constraints_jac},
             # {"type": "ineq",
-            #  "fun": _scipy_model_ineq_constraints,
-            #  "jac": _scipy_model_ineq_constraints_jac}
+            #  "fun": self._scipy_model_ineq_constraints,
+            #  "jac": self._scipy_model_ineq_constraints_jac}
             {"type": "eq",
              "fun": self._scipy_model_eq_constraints,
              "jac": self._scipy_model_eq_constraints_jac},
@@ -263,20 +266,11 @@ class ScipyMPCOptProblem(object):
         Returns the dynamics model consistency constraints.
         |x_{k+1} - f(x_k, u_k)| < eps for k=0, ..., T-1
         """
-        constraints = []
-        for t in range(self.T-1):
-            curr_state = tf.reshape(state[t, :], (1, -1))
-            curr_control = tf.reshape(control[t, :], (1, -1))
-            next_state = tf.reshape(state[t+1, :], (1, -1))
 
-            pred_state = self.sys_model.step(curr_state, curr_control)
-            c_lb = next_state - pred_state - self.model_eps
-            c_ub = pred_state - self.model_eps - next_state
-
-            constraints.append(c_lb)
-            constraints.append(c_ub)
-
-        constraints = tf.reshape(tf.stack(constraints), (-1, 1))
+        pred_state = self.sys_model.step(state[:-1, :], control)
+        constraints_lb = state[1:, :] - pred_state - self.model_eps
+        constraints_ub = pred_state - self.model_eps - state[1:, :]
+        constraints = tf.reshape(tf.stack([constraints_lb, constraints_ub]),(-1, 1))
         return constraints
 
     def _eval_model_eq_constraints(self, state, control):
@@ -284,17 +278,9 @@ class ScipyMPCOptProblem(object):
         returns the dynamics model consistency constraints
         x_{k+1} = f(x_k, u_k) for k=0, ..., T-1        
         """
-        constraints = []
-        for t in range(self.T-1):
-            curr_state = tf.reshape(state[t, :], (1, -1))
-            curr_control = tf.reshape(control[t, :], (1, -1))
-            next_state = tf.reshape(state[t+1, :], (1, -1))
-
-            pred_state = self.sys_model.step(curr_state, curr_control)
-
-            constraints.append(pred_state - next_state)
-
-        constraints = tf.reshape(tf.stack(constraints), (-1, 1))
+        pred_state = self.sys_model.step(state[:-1, :], control)
+        constraints = pred_state - state[1:, :]
+        constraints = tf.reshape(constraints, (-1, 1))
         return constraints
 
     def _compute_jac(self, func, state, control, **kwargs):

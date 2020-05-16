@@ -24,8 +24,8 @@ if gpus:
 
 
 if __name__ == "__main__":
-    num_runs = 1000
-    num_expansions = 500
+    num_runs = 100
+    num_expansions = 100
 
     ttt = TicTacToe()
 
@@ -35,8 +35,8 @@ if __name__ == "__main__":
     value_network.load_weights("models/model.ckpt")
 
     ttt_mcts = TicTacToe()
-    mcts_actor = MCTSActor(ttt_mcts, num_expansions=num_expansions, value_network=value_network)
-    # mcts_actor = MCTSActor(ttt_mcts, num_expansions=num_expansions)
+    # mcts_actor = MCTSActor(ttt_mcts, num_expansions=num_expansions, value_network=value_network)
+    mcts_actor = MCTSActor(ttt_mcts, num_expansions=num_expansions)
 
     optimal_data = np.load("data/minmax_cache.npy")
     optimal_actor = OptimalActor(optimal_data)
