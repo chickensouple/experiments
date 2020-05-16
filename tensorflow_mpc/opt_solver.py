@@ -2,9 +2,6 @@ import numpy as np
 import tensorflow as tf
 import scipy.optimize
 
-# TODO: subclass this to provide custom gradient with tf.custom_gradient decorator
-
-
 class DiscreteSystemModel(object):
     def __init__(self, state_dim, control_dim):
         self.state_dim = state_dim
@@ -35,7 +32,6 @@ class DiscreteSystemModel(object):
         assert(u.shape[1] == self.control_dim)
 
         assert(u.shape[0] == x.shape[0])
-
 
 class ScipyMPCOptProblem(object):
     """
