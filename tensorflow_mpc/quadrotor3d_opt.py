@@ -38,7 +38,7 @@ def compute_ground_effect(x, u):
     motor_vecs.append(quat_mult(quat_mult(quat, np.array([0, 0, 1, 0.], np.float32)), quat_inv(quat))[1:])
 
     rotated_vec = quat_mult(quat_mult(quat, np.array([0, 0, 0, -1.], np.float32)), quat_inv(quat))[1:]
-    down_vec = np.array([0, 0, -1], dtype=quat.dtype)
+    down_vec = np.array([0, 0, -1], dtype=np.float32)
     angle = tf.math.acos(tf.tensordot(down_vec, rotated_vec, axes=1))
 
     alpha = 0.5
@@ -53,7 +53,6 @@ def compute_ground_effect(x, u):
         u_ge.append(u[i] * alpha * angle_frac * dist_frac)
     
     u_ge = tf.stack(u_ge)
-    print("u_ge: {}".format(u_ge))
     return u_ge
 
 
@@ -100,7 +99,6 @@ class Quadrotor3D(opt_solver.DiscreteSystemModel):
 
             if self.use_ground_effect:
                 curr_u += compute_ground_effect(curr_x, curr_u)
-
 
             # compute forces and torques in body frame
             F = tf.reduce_sum(curr_u)
@@ -390,6 +388,7 @@ if __name__ == "__main__":
         start_time = time.clock()
         sol, x_list, u_list = problem.solve(maxiter=500, ftol=1e-3)
         end_time = time.clock()
+        print("x:\n{}".format(x_list))
         print(sol)
         print("Solve time: {} seconds".format(end_time - start_time))
 
@@ -409,7 +408,6 @@ if __name__ == "__main__":
         for t in range(args.T):
             state = x_list[t, :]
             quad.draw_quad(ax, state)
-
             quad.draw_quad(ax, ge_x_list[t], 
                 color1=(1., 0., 1., 0.5), 
                 color2=(0., 1., 0., 0.5))
@@ -417,5 +415,32 @@ if __name__ == "__main__":
         ax.set_xlabel('X')
         ax.set_ylabel('Y')
         ax.set_zlabel('Z')
-        plt.show()
 
+        plt.figure()
+
+        plt.subplot(4, 1, 1)
+        plt.plot([0.1*i for i in range(len(x_list))], x_list[:, 0], label="x")
+        plt.plot([0.1*i for i in range(len(x_list))], x_list[:, 1], label="y")
+        plt.plot([0.1*i for i in range(len(x_list))], x_list[:, 2], label="z")
+        plt.legend()
+
+        plt.subplot(4, 1, 2)
+        plt.plot([0.1*i for i in range(len(x_list))], x_list[:, 3], label="vx")
+        plt.plot([0.1*i for i in range(len(x_list))], x_list[:, 4], label="vy")
+        plt.plot([0.1*i for i in range(len(x_list))], x_list[:, 5], label="vz")
+        plt.legend()
+
+        plt.subplot(4, 1, 3)
+        plt.plot([0.1*i for i in range(len(x_list))], x_list[:, 10], label="wx")
+        plt.plot([0.1*i for i in range(len(x_list))], x_list[:, 11], label="wy")
+        plt.plot([0.1*i for i in range(len(x_list))], x_list[:, 12], label="wz")
+        plt.legend()
+
+        plt.subplot(4, 1, 4)
+        plt.plot([0.1*i for i in range(len(u_list))], u_list[:, 0], label="u0")
+        plt.plot([0.1*i for i in range(len(u_list))], u_list[:, 1], label="u1")
+        plt.plot([0.1*i for i in range(len(u_list))], u_list[:, 2], label="u2")
+        plt.plot([0.1*i for i in range(len(u_list))], u_list[:, 3], label="u3")
+        plt.legend()
+
+        plt.show()

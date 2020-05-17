@@ -77,7 +77,7 @@ class ScipyMPCOptProblem(object):
             ...
 
     problem = MyProblem()
-    sol = problem.solve()
+    sol, x, u = problem.solve()
     """
     def __init__(self, T, sys_model, model_eps=0.01):
         """
@@ -181,6 +181,17 @@ class ScipyMPCOptProblem(object):
 
 
     def solve(self, maxiter=21, ftol=1e-6):
+        """
+        Solves the optimization problem and returns a tuple (sol, x, u).
+        Where sol is the solution object returned by scipy.
+        x is an (T, state_dim) numpy array of the solution states
+        u is an (T-1, control_dim) numpy array of control inputs.
+        x and u are only valid if sol.success == True
+
+        Keyword Arguments:
+            maxiter {int} -- [description] (default: {21})
+            ftol {[type]} -- [description] (default: {1e-6})
+        """
         assert(self.T > 1)
 
         state0, control0 = self.initial_guess()
