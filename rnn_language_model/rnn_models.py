@@ -15,23 +15,25 @@ if gpus:
         for gpu in gpus:
             tf.config.experimental.set_memory_growth(gpu, True)
             logical_gpus = tf.config.experimental.list_logical_devices('GPU')
-            print(len(gpus), "Physical GPUs,", len(logical_gpus), "Logical GPUs")
+            print(len(gpus), "Physical GPUs,", len(
+                logical_gpus), "Logical GPUs")
     except RuntimeError as e:
         # Memory growth must be set before GPUs have been initialized
         print(e)
 
+
 class SimpleCharacterRNN(tf.keras.Model):
     def __init__(
-        self, 
-        vocab_size, 
-        embedding_dim=256, 
-        rnn_units=512,
-        rnn_type="gru"):
+            self,
+            vocab_size,
+            embedding_dim=256,
+            rnn_units=512,
+            rnn_type="gru"):
         super().__init__()
 
         self.vocab_size = vocab_size
         self.encoding = tf.keras.layers.Embedding(vocab_size, embedding_dim)
-        
+
         if rnn_type == "lstm":
             self.lstm = tf.keras.layers.LSTM(
                 units=rnn_units,
@@ -69,33 +71,38 @@ class SimpleCharacterRNN(tf.keras.Model):
             char_logits = np.reshape(output, (-1))
             char_logits = char_logits / temperature
 
-            dist = tfp.distributions.Categorical(logits=char_logits, dtype=tf.int32)
-            char_token = tfp.distributions.Sample(dist, sample_shape=(1,)).sample()
+            dist = tfp.distributions.Categorical(
+                logits=char_logits, dtype=tf.int32)
+            char_token = tfp.distributions.Sample(
+                dist, sample_shape=(1,)).sample()
             curr_char = tf.reshape(char_token, (1, 1))
             char_list.append(int(char_token))
         return char_list
 
+
 def character_prediction_loss(y, y_hat):
     loss = tf.reduce_sum(
         tf.nn.sparse_softmax_cross_entropy_with_logits(
-            labels=y, logits=y_hat), 
+            labels=y, logits=y_hat),
         axis=1)
     return loss
+
 
 def train_step(x, y, model, optimizer):
     with tf.GradientTape() as tape:
         y_hat, _ = model(x)
         loss = character_prediction_loss(y, y_hat)
-    
+
     grads = tape.gradient(loss, model.trainable_variables)
     optimizer.apply_gradients(zip(grads, model.trainable_variables))
 
     return loss
 
+
 def train(model, train_text_data, val_text_data, modeldir, logdir, epochs):
     """
     Trains a model.
-    
+
     Arguments:
         model {SimpleCharacterRNN} -- Model to train.
         train_text_data {string} -- Training data.
@@ -132,7 +139,6 @@ def train(model, train_text_data, val_text_data, modeldir, logdir, epochs):
             y = tf.convert_to_tensor(y)
             loss = train_step(x, y, model, optimizer)
 
-
         # Evaluate loss functions after every epoch of training
         for (x, y) in train_ds:
             y_hat, _ = model(x)
@@ -144,9 +150,9 @@ def train(model, train_text_data, val_text_data, modeldir, logdir, epochs):
                 y_hat, _ = model(x)
                 loss = character_prediction_loss(y, y_hat)
                 val_loss(loss)
-        
+
         print("Epoch {}: train loss = {}, val_loss = {}".
-            format(i, train_loss.result(), val_loss.result()))
+              format(i, train_loss.result(), val_loss.result()))
         model_path = os.path.join(modeldir, "model_" + str(i) + ".ckpt")
         model.save_weights(model_path)
         with train_summary_writer.as_default():
@@ -157,10 +163,11 @@ def train(model, train_text_data, val_text_data, modeldir, logdir, epochs):
     model_path = os.path.join(modeldir, "model_final.ckpt")
     model.save_weights(model_path)
 
+
 def test(model, char_processor, num_chars, starting_char, temp):
     """
     Tests a model
-    
+
     Arguments:
         model {SimpleCharacterRNN} -- Model to draw sampled test from.
         char_processor {CharProcessor} -- Character Processor to convert
@@ -170,7 +177,7 @@ def test(model, char_processor, num_chars, starting_char, temp):
         temp {float} -- Temperature for softmax    
     """
     idx_list = model.sample(
-        starting_char=char_processor.convert_to_int(starting_char)[0], 
+        starting_char=char_processor.convert_to_int(starting_char)[0],
         num_chars=num_chars,
         temperature=temp)
     sampled_text = char_processor.convert_to_char(idx_list)
@@ -179,8 +186,10 @@ def test(model, char_processor, num_chars, starting_char, temp):
     print(sampled_text)
     return sampled_text
 
+
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Train and Test Character LSTM models")
+    parser = argparse.ArgumentParser(
+        description="Train and Test Character LSTM models")
     parser.add_argument(
         "--dataset",
         action="store",
@@ -197,16 +206,16 @@ if __name__ == "__main__":
         choices=["gru", "lstm", "rnn"],
         default="gru",
         help="Which kind of rnn to use. GRU, LSTM or a vanilla RNN.")
-    
+
     subparser = parser.add_subparsers(
         help="Train or Test the character model. \
               Choose an option and add -h for further options.",
         dest="cmd")
     train_subparser = subparser.add_parser("train",
-        help="Train a model.")
+                                           help="Train a model.")
     train_subparser.add_argument(
         "--nepochs",
-        action="store", 
+        action="store",
         type=int,
         default=10,
         help="Number of epochs to train for.")
@@ -217,8 +226,8 @@ if __name__ == "__main__":
         default="/tmp/rnn_char_model",
         help="Directory to save model and log data in.")
 
-    test_subparser = subparser.add_parser("test", 
-        help="Draw sampled text from a model.")
+    test_subparser = subparser.add_parser("test",
+                                          help="Draw sampled text from a model.")
     test_subparser.add_argument(
         "--data_dir",
         action="store",
@@ -227,12 +236,12 @@ if __name__ == "__main__":
         help="Directory to load model data from.\
               Should be the same as the argument given to train.")
     test_subparser.add_argument(
-        "--nchars", 
+        "--nchars",
         type=int,
         default=1000,
         help="Number of characters to predict")
     test_subparser.add_argument(
-        "--starting_char", 
+        "--starting_char",
         type=str,
         default=".",
         help="Number of characters to predict")
@@ -265,4 +274,3 @@ if __name__ == "__main__":
         test(model, char_processor, args.nchars, args.starting_char, args.temp)
     else:
         raise Exception("Not a valid cmd.")
-     
