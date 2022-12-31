@@ -190,7 +190,7 @@ class SimpleSelfAttentionLayer(tf.keras.Model):
         self.dense2 = tf.keras.layers.Dense(
             units=self.n_embed, activation=None)
 
-    def _create_mask(self, key_shape, n_seq):
+    def _create_autoregressive_mask(self, key_shape, n_seq):
         mask = np.full((n_seq, n_seq), False)
         mask[np.tril_indices(n=n_seq)] = True
         stacked_mask = np.full(
@@ -206,7 +206,7 @@ class SimpleSelfAttentionLayer(tf.keras.Model):
         x0 = inp
 
         # (..., n_seq, n_embed)
-        mask = self._create_mask(inp.shape, n_seq)
+        mask = self._create_autoregressive_mask(inp.shape, n_seq)
         x1 = self.multihead_attention(x0, x0, x0, mask)
 
         # (..., n_seq, n_dim)
@@ -239,6 +239,8 @@ class SimpleAttentionLanguageModel(tf.keras.Model):
         self.self_attention2 = SimpleSelfAttentionLayer(
             self.n_embed, self.n_heads)
 
+        self.out_proj = tf.keras.layers.Dense(self.vocab_size)
+
     def call(self, inp):
         '''
         inp is (..., n_seq)
@@ -257,12 +259,23 @@ class SimpleAttentionLanguageModel(tf.keras.Model):
         # (..., n_seq, n_embed)
         x4 = self.self_attention2(x3)
 
-        return x4
+        # (..., n_seq, vocab_size)
+        x5 = self.out_proj(x4)
+
+        return x5
+
+
+def character_prediction_loss(y, y_hat):
+    loss = tf.reduce_sum(
+        tf.nn.sparse_softmax_cross_entropy_with_logits(
+            labels=y, logits=y_hat),
+        axis=1)
+    return loss
 
 
 def train_step(x, y, model, optimizer):
     with tf.GradientTape() as tape:
-        y_hat, _ = model(x)
+        y_hat = model(x)
         loss = character_prediction_loss(y, y_hat)
 
     grads = tape.gradient(loss, model.trainable_variables)
@@ -297,7 +310,7 @@ def train(model, train_text_data, val_text_data, modeldir, logdir, epochs):
         val_idx_list = char_processor.convert_to_int(val_text_data)
         val_ds = create_char_pred_ds(val_idx_list)
 
-    optimizer = tf.keras.optimizers.Adam(learning_rate=1e-3)
+    optimizer = tf.keras.optimizers.Adam(learning_rate=1e-4)
     train_loss = tf.keras.metrics.Mean(name="train_loss")
     val_loss = tf.keras.metrics.Mean(name="val_loss")
 
@@ -309,19 +322,17 @@ def train(model, train_text_data, val_text_data, modeldir, logdir, epochs):
         for (x, y) in tqdm(train_ds):
             x = tf.convert_to_tensor(x)
             y = tf.convert_to_tensor(y)
-            import pdb
-            pdb.set_trace()
             loss = train_step(x, y, model, optimizer)
 
         # Evaluate loss functions after every epoch of training
         for (x, y) in train_ds:
-            y_hat, _ = model(x)
+            y_hat = model(x)
             loss = character_prediction_loss(y, y_hat)
             train_loss(loss)
 
         if val_text_data is not None:
             for (x, y) in tqdm(val_ds):
-                y_hat, _ = model(x)
+                y_hat = model(x)
                 loss = character_prediction_loss(y, y_hat)
                 val_loss(loss)
 
@@ -382,13 +393,13 @@ if __name__ == "__main__":
     # pdb.set_trace()
     # pass
 
-    text = load_data("tiny_shakespeare")
+    text = load_data("custom")
     vocab = sorted(set(text))
     char_processor = CharProcessor(vocab)
     vocab_size = len(vocab)
 
     model = SimpleAttentionLanguageModel(
-        vocab_size=vocab_size, n_embed=512, n_heads=8)
+        vocab_size=vocab_size, n_embed=256, n_heads=4)
     num_params = count_params(model.trainable_weights)
 
-    train(model, text, None, "", "", 100)
+    train(model, text, None, "", "", epochs=10)
